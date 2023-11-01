@@ -62,6 +62,7 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
     rScore = 0
 
     sync = 0
+    sys.stderr.write("got here")
 
     while True:
         # Wiping the screen
@@ -86,6 +87,7 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
         # Your code here to send an update to the server on your paddle's information,
         # where the ball is and the current score.
         # Feel free to change when the score is updated to suit your needs/requirements
+        sys.stderr.write("got here 2")
         
         try: 
             paddle_info = {
@@ -101,6 +103,7 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
             errMessage = screen.blit(textSurface, textRect)
 
         # =========================================================================================
+        sys.stderr.write("got here 3")
 
         # Update the player paddle and opponent paddle's location on the screen
         for paddle in [playerPaddleObj, opponentPaddleObj]:
@@ -162,7 +165,8 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
         scoreRect = updateScore(lScore, rScore, screen, WHITE, scoreFont)
         pygame.display.update([topWall, bottomWall, ball, leftPaddle, rightPaddle, scoreRect, winMessage])
         clock.tick(60)
-        
+    
+
         # This number should be synchronized between you and your opponent.  If your number is larger
         # then you are ahead of them in time, if theirs is larger, they are ahead of you, and you need to
         # catch up (use their info)
