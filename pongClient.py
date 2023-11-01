@@ -90,7 +90,7 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
         try: 
             paddle_info = {
                 "y_pos": playerPaddleObj.rect.y,
-                "request": "update_paddle"
+                "request": "update_paddle",
             }
             client.sendall(json.dumps(paddle_info).encode('utf-8'))
         except Exception as e:
@@ -167,6 +167,7 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
         # then you are ahead of them in time, if theirs is larger, they are ahead of you, and you need to
         # catch up (use their info)
         sync += 1
+        sys.stderr.write(f"sync: {sync}")
         # =========================================================================================
         # Send your server update here at the end of the game loop to sync your game with your
         # opponent's game
@@ -178,7 +179,7 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
             client.sendall(json.dumps(paddle_info).encode('utf-8'))
 
             data = client.recv(1024)
-            server_response = json_loads(data.decode('utf-8'))
+            server_response = json.loads(data.decode('utf-8'))
             opponent_paddle_pos = server_response.get("opponent_y", "Unknown")
             
             if opponent_paddle_pos == "Unknown":
@@ -239,11 +240,11 @@ def joinServer(ip: str, port: str, username: str, password: str, errorLabel: tk.
         }
         
         # send this data to the server.
-        client.sendall(json.dumps(user_info).encode('utf-8'))
+        client.sendall(json.dumps(player_info).encode('utf-8'))
 
         # Receive server response (json):
         data = client.recv(1024)
-        server_response = json_loads(data.decode('utf-8'))
+        server_response = json.loads(data.decode('utf-8'))
         
         # parse the data received from the server
         x_res = server_response.get("x_res", "Unknown")
