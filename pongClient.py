@@ -13,24 +13,8 @@ import socket
 import ssl
 import json
 import hashlib
-import argparse
 
 from assets.code.helperCode import *
-
-def get_authenticated_client():
-    # create a parser to accept CLI arguments for the username and password
-    parser = argparse.ArgumentParser(description='Player Authentication for Game')
-    
-    # accept two fields for the username and password
-    parser.add_argument('--username', type=str, required=True, help='Username for the player')
-    parser.add_argument('--password', type=str, required=True, help='Password for the player')
-    
-    # parse the arguments
-    args = parser.parse_args()
-    
-    # extrapolate the username and password from it
-    username = args.username
-    password = hashlib.sha256(args.password.encode()).hexdigest()  # Hashing the password
 
 # This is the main game loop.  For the most part, you will not need to modify this.  The sections
 # where you should add to the code are marked.  Feel free to change any part of this project
