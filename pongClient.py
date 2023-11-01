@@ -93,7 +93,7 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
                 "request": "update_paddle"
             }
             client.sendall(json.dumps(paddle_info).encode('utf-8'))
-        except e:
+        except Exception as e:
             errText = "Error in sending paddle info!"
             textSurface = winFont.render(errText, False, (255, 0, 0), (0,0,0))
             textrect = textSurface.get_rect()
@@ -186,7 +186,7 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
 
             opponentPaddleObj.rect.y = opponent_paddle_pos
 
-        except e:
+        except Exception as e:
             errText = f"Error in receiving opponent paddle info! {e}"
             textSurface = winFont.render(errText, False, (255, 0, 0), (0,0,0))
             textrect = textSurface.get_rect()
@@ -226,6 +226,9 @@ def joinServer(ip: str, port: str, username: str, password: str, errorLabel: tk.
     try:
         # create a socket and connect to the server
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # set 5 second timeout
+        client.settimeout(5)
+        # attempt to connect
         client.connect((ip, int(port)))
         
         # use a dict to hold user information
@@ -269,10 +272,10 @@ def joinServer(ip: str, port: str, username: str, password: str, errorLabel: tk.
         playGame(x_res, y_res, paddle_position, client)
         # kills the window (effectively quitting the program)
         app.quit()
-    except e:
+    except Exception as e:
         # if any exceptions were caught, update the error label to display it and return from this function
         # this should result in the user still being on the startup screen with the error message printed.
-        errorLabel.config(text="Exception received: {e}")
+        errorLabel.config(text=f"Exception received: {e}")
         errorLabel.update()
         return
 
