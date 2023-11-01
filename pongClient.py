@@ -10,8 +10,27 @@ import pygame
 import tkinter as tk
 import sys
 import socket
+import ssl
+import json
+import hashlib
+import argparse
 
 from assets.code.helperCode import *
+
+def get_authenticated_client():
+    # create a parser to accept CLI arguments for the username and password
+    parser = argparse.ArgumentParser(description='Player Authentication for Game')
+    
+    # accept two fields for the username and password
+    parser.add_argument('--username', type=str, required=True, help='Username for the player')
+    parser.add_argument('--password', type=str, required=True, help='Password for the player')
+    
+    # parse the arguments
+    args = parser.parse_args()
+    
+    # extrapolate the username and password from it
+    username = args.username
+    password = hashlib.sha256(args.password.encode()).hexdigest()  # Hashing the password
 
 # This is the main game loop.  For the most part, you will not need to modify this.  The sections
 # where you should add to the code are marked.  Feel free to change any part of this project
@@ -83,7 +102,7 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
         # Your code here to send an update to the server on your paddle's information,
         # where the ball is and the current score.
         # Feel free to change when the score is updated to suit your needs/requirements
-        
+                
         
         # =========================================================================================
 
@@ -165,66 +184,149 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
 # the screen width, height and player paddle (either "left" or "right")
 # If you want to hard code the screen's dimensions into the code, that's fine, but you will need to know
 # which client is which
-def joinServer(ip:str, port:str, errorLabel:tk.Label, app:tk.Tk) -> None:
-    # Purpose:      This method is fired when the join button is clicked
+def joinServer(ip: str, port: str, username: str, password: str, errorLabel: tk.Label, app: tk.Tk) -> None:
+    # Author:        Kevin Cosby, Oskar Flores
+    #
+    # Purpose:       Creates an initial connection to the server, receives parameters to initialize the game with,
+    #                handles any errors or exceptions gracefully, starts the game if valid parameters received and
+    #                connection to the server was successful
+    #
+    # Pre:           expects ip and port to point to a valid server instance, otherwise an exception will be raised.
+    #                expects the username and password to be a valid combination, with the password being a sha-256 hash
+    #                and not a plaintext password. errorLabel is for displaying errors in the UI, and the app is so that
+    #                this method can hide the window and kill the app once the game is over
+    #
+    # Post:          This method will hide the tk UI, start the game, and then finally kill the tk app and the entire
+    #                program once the game has ended. Otherwise, just returns nothing and we remain in the UI
+    #
     # Arguments:
-    # ip            A string holding the IP address of the server
-    # port          A string holding the port the server is using
-    # errorLabel    A tk label widget, modify it's text to display messages to the user (example below)
-    # app           The tk window object, needed to kill the window
+    #                ip            A string holding the IP address of the server
+    #                port          A string holding the port the server is using
+    #                username      A string holding the plaintext username for the player
+    #                password      A string holding the sha256 hash of the password in hexadecimal format.
+    #                errorLabel    A tk label widget, modify it's text to display messages to the user (example below)
+    #                app           The tk window object, needed to kill the window
     
-    # Create a socket and connect to the server
-    # You don't have to use SOCK_STREAM, use what you think is best
-    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # Get the required information from your server (screen width, height & player paddle, "left" or "right")
+    try:
+        # create a socket and connect to the server
+        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client.connect((ip, int(port)))
+        
+        # use a dict to hold user information
+        player_info = {
+            "username": username,
+            "password": password,
+            "request": "get_parameters"
+        }
+        
+        # send this data to the server.
+        client.sendall(json.dumps(user_info).encode('utf-8'))
 
-    # Get the required information from your server (screen width, height & player paddle, "left or "right)
-
-
-    # If you have messages you'd like to show the user use the errorLabel widget like so
-    errorLabel.config(text=f"Some update text. You input: IP: {ip}, Port: {port}")
-    # You may or may not need to call this, depending on how many times you update the label
-    errorLabel.update()     
-
-    # Close this window and start the game with the info passed to you from the server
-    #app.withdraw()     # Hides the window (we'll kill it later)
-    #playGame(screenWidth, screenHeight, ("left"|"right"), client)  # User will be either left or right paddle
-    #app.quit()         # Kills the window
-
+        # Receive server response (json):
+        data = client.recv(1024)
+        server_response = json_loads(data.decode('utf-8'))
+        
+        # parse the data received from the server
+        x_res = server_response.get("x_res", "Unknown")
+        y_res = server_response.get("y_res", "Unknown")
+        paddle_position = server_response.get("paddle_position", "Unknown")
+        
+        # ensure the validity of the data we received
+        errors = []
+        if not isinstance(x_res, int):
+            errors.append(f"invalid x resolution received from the server. Value: {x_res}")
+        if not isinstance(y_res, int):
+            errors.append(f"invalid y resolution received from the server. Value: {y_res}")
+        if paddle_position not in ["left", "right"]:
+            errors.append(f"invalid paddle position received from the server. Value: {paddle_position}")
+        
+        # if any errors were received, update the error label to display them and return from this function
+        # this should result in the user still being on the startup screen with the error message printed.
+        if errors:
+            errorLabel.config(text="\n".join(errors))
+            errorLabel.update()
+            return
+        
+        # Hides the window for settings
+        app.withdraw()
+        # if we have passed these checks and have valid information, play the game with these params
+        playGame(x_res, y_res, paddle_position, client)
+        # kills the window (effectively quitting the program)
+        app.quit()
+    except e:
+        # if any exceptions were caught, update the error label to display it and return from this function
+        # this should result in the user still being on the startup screen with the error message printed.
+        errorLabel.config(text="Exception received: {e}")
+        errorLabel.update()
+        return
 
 # This displays the opening screen, you don't need to edit this (but may if you like)
 def startScreen():
+    # initialize TK app
     app = tk.Tk()
+    # set window title to "Server Info"
     app.title("Server Info")
-
+    
+    # display the logo for the pong game
     image = tk.PhotoImage(file="./assets/images/logo.png")
-
+    
+    # display the title
     titleLabel = tk.Label(image=image)
     titleLabel.grid(column=0, row=0, columnspan=2)
-
+    
+    # ip label
     ipLabel = tk.Label(text="Server IP:")
     ipLabel.grid(column=0, row=1, sticky="W", padx=8)
-
+    # ip entry box
     ipEntry = tk.Entry(app)
     ipEntry.grid(column=1, row=1)
-
+    
+    # port label
     portLabel = tk.Label(text="Server Port:")
     portLabel.grid(column=0, row=2, sticky="W", padx=8)
-
+    # port entry box
     portEntry = tk.Entry(app)
     portEntry.grid(column=1, row=2)
+    
+    # username label
+    usernameLabel = tk.Label(text="Username:")
+    usernameLabel.grid(column=0, row=3, sticky="W", padx=8)
+    # username entry box
+    usernameEntry = tk.Entry(app)
+    usernameEntry.grid(column=1, row=3)
 
+    # password label
+    passwordLabel = tk.Label(text="Password:")
+    passwordLabel.grid(column=0, row=4, sticky="W", padx=8)
+    # password entry box
+    passwordEntry = tk.Entry(app)
+    passwordEntry.grid(column=1, row=4)
+    
+    # error label (this was here before, not written by us)
     errorLabel = tk.Label(text="")
-    errorLabel.grid(column=0, row=4, columnspan=2)
-
-    joinButton = tk.Button(text="Join", command=lambda: joinServer(ipEntry.get(), portEntry.get(), errorLabel, app))
-    joinButton.grid(column=0, row=3, columnspan=2)
-
+    errorLabel.grid(column=0, row=6, columnspan=2)
+    
+    # display join button at the bottom. When the join button is clicked, the joinServer function is called.
+    # joinSever will accept the ip, port, username, encrypted password, as well as a label where error text
+    # can be displayed, and the tk app instance its self. 
+    joinButton = tk.Button(text="Join", command=lambda: joinServer(ipEntry.get(), 
+                                                                   portEntry.get(), 
+                                                                   usernameEntry.get(), 
+                                                                   hashlib.sha256(passwordEntry.get().encode()).hexdigest(),
+                                                                   errorLabel, 
+                                                                   app))
+    
+    # define location of jumpbutton
+    joinButton.grid(column=0, row=5, columnspan=2)
+    
+    # display the tkinter UI menu
     app.mainloop()
 
 if __name__ == "__main__":
-    #startScreen()
+    startScreen()
     
     # Uncomment the line below if you want to play the game without a server to see how it should work
     # the startScreen() function should call playGame with the arguments given to it by the server this is
     # here for demo purposes only
-    playGame(640, 480,"left",socket.socket(socket.AF_INET, socket.SOCK_STREAM))
+    #playGame(640, 480,"left",socket.socket(socket.AF_INET, socket.SOCK_STREAM))
