@@ -86,8 +86,20 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
         # Your code here to send an update to the server on your paddle's information,
         # where the ball is and the current score.
         # Feel free to change when the score is updated to suit your needs/requirements
-                
         
+        try: 
+            paddle_info = {
+                "y_pos": playerPaddleObj.rect.y,
+                "request": "update_paddle"
+            }
+            client.sendall(json.dumps(paddle_info).encode('utf-8'))
+        except e:
+            errText = "Error in sending paddle info!"
+            textSurface = winFont.render(errText, False, (255, 0, 0), (0,0,0))
+            textrect = textSurface.get_rect()
+            textRect.center = ((screenWidth/2), screenHeight/2)
+            errMessage = screen.blit(textSurface, textRect)
+
         # =========================================================================================
 
         # Update the player paddle and opponent paddle's location on the screen
@@ -159,10 +171,29 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
         # Send your server update here at the end of the game loop to sync your game with your
         # opponent's game
 
+        try: 
+            get_opponent_info= {
+                "request": "get_opponent_paddle"
+            }
+            client.sendall(json.dumps(paddle_info).encode('utf-8'))
+
+            data = client.recv(1024)
+            server_response = json_loads(data.decode('utf-8'))
+            opponent_paddle_pos = server_response.get("opponent_y", "Unknown")
+            
+            if opponent_paddle_pos == "Unknown":
+                raise ValueError("unknown opponent paddle position received from server.") 
+
+            opponentPaddleObj.rect.y = opponent_paddle_pos
+
+        except e:
+            errText = f"Error in receiving opponent paddle info! {e}"
+            textSurface = winFont.render(errText, False, (255, 0, 0), (0,0,0))
+            textrect = textSurface.get_rect()
+            textRect.center = ((screenWidth/2), screenHeight/2)
+            errMessage = screen.blit(textSurface, textRect)
+
         # =========================================================================================
-
-
-
 
 # This is where you will connect to the server to get the info required to call the game loop.  Mainly
 # the screen width, height and player paddle (either "left" or "right")
