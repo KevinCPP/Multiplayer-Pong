@@ -54,6 +54,7 @@ def handle_client_info(client_socket):
             # Decode and parse the request from the client
             decoded_data = data.decode('utf-8')
             client_request = json.loads(decoded_data)
+            print(f"{decoded_data}")
             
             if client_request["request"] == "update_paddle":
                 game_state['player1']['y_pos'] = int (client_request['y_pos'])

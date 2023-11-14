@@ -11,6 +11,7 @@ import tkinter as tk
 import sys
 import socket
 import ssl
+import pdb
 import json
 import hashlib
 
@@ -33,6 +34,7 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
     pointSound = pygame.mixer.Sound("./assets/sounds/point.wav")
     bounceSound = pygame.mixer.Sound("./assets/sounds/bounce.wav")
 
+
     # Display objects
     screen = pygame.display.set_mode((screenWidth, screenHeight))
     winMessage = pygame.Rect(0,0,0,0)
@@ -41,6 +43,8 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
     centerLine = []
     for i in range(0, screenHeight, 10):
         centerLine.append(pygame.Rect((screenWidth/2)-5,i,5,5))
+
+    
 
     # Paddle properties and init
     paddleHeight = 50
@@ -62,7 +66,6 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
     rScore = 0
 
     sync = 0
-    sys.stderr.write("got here")
 
     while True:
         # Wiping the screen
@@ -87,8 +90,7 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
         # Your code here to send an update to the server on your paddle's information,
         # where the ball is and the current score.
         # Feel free to change when the score is updated to suit your needs/requirements
-        sys.stderr.write("got here 2")
-        
+
         try: 
             paddle_info = {
                 "y_pos": playerPaddleObj.rect.y,
@@ -96,14 +98,9 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
             }
             client.sendall(json.dumps(paddle_info).encode('utf-8'))
         except Exception as e:
-            errText = "Error in sending paddle info!"
-            textSurface = winFont.render(errText, False, (255, 0, 0), (0,0,0))
-            textrect = textSurface.get_rect()
-            textRect.center = ((screenWidth/2), screenHeight/2)
-            errMessage = screen.blit(textSurface, textRect)
+            print(f"Error updating paddle | {e}")
 
         # =========================================================================================
-        sys.stderr.write("got here 3")
 
         # Update the player paddle and opponent paddle's location on the screen
         for paddle in [playerPaddleObj, opponentPaddleObj]:
@@ -171,7 +168,6 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
         # then you are ahead of them in time, if theirs is larger, they are ahead of you, and you need to
         # catch up (use their info)
         sync += 1
-        sys.stderr.write(f"sync: {sync}")
         # =========================================================================================
         # Send your server update here at the end of the game loop to sync your game with your
         # opponent's game
@@ -180,7 +176,7 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
             get_opponent_info= {
                 "request": "get_opponent_paddle"
             }
-            client.sendall(json.dumps(paddle_info).encode('utf-8'))
+            client.sendall(json.dumps(get_opponent_info).encode('utf-8'))
 
             data = client.recv(1024)
             server_response = json.loads(data.decode('utf-8'))
