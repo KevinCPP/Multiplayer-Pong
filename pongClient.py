@@ -55,7 +55,7 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
 
     ball = Ball(pygame.Rect(screenWidth/2, screenHeight/2, 5, 5), -5, 0)
 
-    if playerPaddle == "left":
+    if playerPaddle == "player1":
         opponentPaddleObj = rightPaddle
         playerPaddleObj = leftPaddle
     else:
@@ -93,8 +93,8 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
 
         try: 
             paddle_info = {
-                "y_pos": playerPaddleObj.rect.y,
                 "request": "update_paddle",
+                "y_pos": playerPaddleObj.rect.y,
             }
             client.sendall(json.dumps(paddle_info).encode('utf-8'))
         except Exception as e:
@@ -257,7 +257,7 @@ def joinServer(ip: str, port: str, username: str, password: str, errorLabel: tk.
             errors.append(f"invalid x resolution received from the server. Value: {x_res}")
         if not isinstance(y_res, int):
             errors.append(f"invalid y resolution received from the server. Value: {y_res}")
-        if paddle_position not in ["left", "right"]:
+        if paddle_position not in ["player1", "player2"]:
             errors.append(f"invalid paddle position received from the server. Value: {paddle_position}")
         
         # if any errors were received, update the error label to display them and return from this function
