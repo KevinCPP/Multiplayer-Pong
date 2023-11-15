@@ -106,6 +106,7 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
             paddle_info = {
                 "request": "update_paddle",
                 "y_pos": playerPaddleObj.rect.y,
+                "sync": sync
             }
             client.sendall(json.dumps(paddle_info).encode('utf-8'))
         except Exception as e:
@@ -179,6 +180,7 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
         # then you are ahead of them in time, if theirs is larger, they are ahead of you, and you need to
         # catch up (use their info)
         sync += 1
+
         # =========================================================================================
         # Send your server update here at the end of the game loop to sync your game with your
         # opponent's game
