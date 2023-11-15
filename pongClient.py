@@ -21,6 +21,17 @@ from assets.code.helperCode import *
 # where you should add to the code are marked.  Feel free to change any part of this project
 # to suit your needs.
 def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.socket) -> None:
+    # Signal readiness to server
+    ready_message = json.dumps({'request': 'ready'})
+    client.sendall(ready_message.encode('utf-8'))
+
+    # Wait for server to signal game start
+    while True:
+        server_response = json.loads(client.recv(1024).decode('utf-8'))
+        if 'game_start' in server_response and server_response['game_start']:
+            break
+
+
     
     # Pygame inits
     pygame.mixer.pre_init(44100, -16, 2, 2048)
@@ -349,3 +360,4 @@ if __name__ == "__main__":
     # the startScreen() function should call playGame with the arguments given to it by the server this is
     # here for demo purposes only
     #playGame(640, 480,"left",socket.socket(socket.AF_INET, socket.SOCK_STREAM))
+
