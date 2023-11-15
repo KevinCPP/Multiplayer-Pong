@@ -1,3 +1,11 @@
+# =================================================================================================
+# Contributing Authors:	    Kevin Cosby, Oskar Flores 
+# Email Addresses:          knco259@uky.edu, oskar.flores@uky.edu
+# Date:                     2023 November 15
+# Purpose:                  handles the client side of the game
+# Misc:                     Released under GNU GPL v3.0
+# =================================================================================================
+
 import sys
 import socket
 import threading
