@@ -41,18 +41,16 @@ def handle_client(client_socket, player_id, opponent_id, clients):
                         response = {'game_start': True}
                         c.sendall(json.dumps(response).encode('utf-8'))
 
-            # Other request handling...
-            # Placeholder for score update
+
             if client_request['request'] == 'score':
                 # Update score for the player
                 game_state[player_id]['score'] += 1
-                # Send score update to all clients
+                # Send score update to both clients
                 score_update = {'player1_score': game_state['player1']['score'], 'player2_score': game_state['player2']['score']}
                 for c in clients:
                     c.sendall(json.dumps(score_update).encode('utf-8'))
 
 
-            # Original exception handling
         except Exception as e:
             print(f"Error with client {player_id}: {e}")
             break
@@ -78,7 +76,7 @@ def start_server():
 
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind(("localhost", 12345))  # Adjust the port if needed
+    server.bind(("localhost", 12321))
     server.listen(2)
     print("Server listening for connections...")
 
