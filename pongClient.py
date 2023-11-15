@@ -15,6 +15,8 @@ import pdb
 import json
 import hashlib
 
+import utility
+
 from assets.code.helperCode import *
 
 # This is the main game loop.  For the most part, you will not need to modify this.  The sections
@@ -66,6 +68,8 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
     rScore = 0
 
     sync = 0
+    desync = 0
+    sync_every_n = 2
 
     while True:
         # Wiping the screen
@@ -91,16 +95,25 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
         # where the ball is and the current score.
         # Feel free to change when the score is updated to suit your needs/requirements
 
-        try: 
-            paddle_info = {
-                "request": "update_paddle",
-                "y_pos": playerPaddleObj.rect.y,
-                "sync": sync
-            }
-            client.sendall(json.dumps(paddle_info).encode('utf-8'))
-        except Exception as e:
-            print(f"Error updating paddle | {e}")
+        which_score = 0
+        if playerPaddle == "player1":
+            which_score = lScore
+        else:
+            which_score = rScore
 
+        update_state = {
+            "request": "update_state",
+            "ypos": playerPaddleObj.rect.y,
+            "ballx": ball.rect.x,
+            "bally": ball.rect.y,
+            "ballxvel": ball.xVel,
+            "ballyvel": ball.yVel,
+            "sync": sync,
+            "score": which_score,
+        }
+
+        utility.send_message(client, update_state)
+        
         # =========================================================================================
 
         # Update the player paddle and opponent paddle's location on the screen
@@ -127,24 +140,24 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
             # If the ball makes it past the edge of the screen, update score, etc.
             if ball.rect.x > screenWidth:
                 lScore += 1
-                pointSound.play()
+                #pointSound.play()
                 ball.reset(nowGoing="left")
             elif ball.rect.x < 0:
                 rScore += 1
-                pointSound.play()
+                #pointSound.play()
                 ball.reset(nowGoing="right")
                 
             # If the ball hits a paddle
             if ball.rect.colliderect(playerPaddleObj.rect):
-                bounceSound.play()
+                #bounceSound.play()
                 ball.hitPaddle(playerPaddleObj.rect.center[1])
             elif ball.rect.colliderect(opponentPaddleObj.rect):
-                bounceSound.play()
+                #bounceSound.play()
                 ball.hitPaddle(opponentPaddleObj.rect.center[1])
                 
             # If the ball hits a wall
             if ball.rect.colliderect(topWall) or ball.rect.colliderect(bottomWall):
-                bounceSound.play()
+                #bounceSound.play()
                 ball.hitWall()
             
             pygame.draw.rect(screen, WHITE, ball)
@@ -169,32 +182,44 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
         # then you are ahead of them in time, if theirs is larger, they are ahead of you, and you need to
         # catch up (use their info)
         sync += 1
-
+        
         # =========================================================================================
         # Send your server update here at the end of the game loop to sync your game with your
         # opponent's game
-
-        try: 
-            get_opponent_info= {
-                "request": "get_opponent_paddle"
-            }
-            client.sendall(json.dumps(get_opponent_info).encode('utf-8'))
-
-            data = client.recv(1024)
-            server_response = json.loads(data.decode('utf-8'))
-            opponent_paddle_pos = server_response.get("opponent_y", "Unknown")
+        utility.send_message(client, {"request": "sync"})
+        response = utility.receive_message(client)
+        
+        if response:
+            p1_ypos = response.get("p1_ypos")
+            p2_ypos = response.get("p2_ypos")
+            ballx = response.get("ballx")
+            bally = response.get("bally")
+            ballxvel = response.get("ballxvel")
+            ballyvel = response.get("ballyvel")
+            p1_score = response.get("p1_score")
+            p2_score = response.get("p2_score")
+            p1_sync = response.get("p1_sync")
+            p2_sync = response.get("p2_sync")
             
-            if opponent_paddle_pos == "Unknown":
-                raise ValueError("unknown opponent paddle position received from server.") 
+            if playerPaddle == "player1" and (p2_sync < sync):
+                desync = sync - p2_sync
+                #playerPaddleObj.rect.y = p1_ypos
+                opponentPaddleObj.rect.y = p2_ypos
+            elif playerPaddle == "player2" and (p1_sync < sync):
+                desync = sync - p1_sync
+                #playerPaddleObj.rect.y = p2_ypos
+                opponentPaddleObj.rect.y = p1_ypos
+            
+            if desync > 1 or (sync % sync_every_n == 0):
+                ball.rect.x = ballx
+                ball.rect.y = bally
+                ball.xVel = ballxvel
+                ball.yVel = ballyvel
+                lScore = p1_score
+                rScore = p2_score
 
-            opponentPaddleObj.rect.y = opponent_paddle_pos
-
-        except Exception as e:
-            errText = f"Error in receiving opponent paddle info! {e}"
-            textSurface = winFont.render(errText, False, (255, 0, 0), (0,0,0))
-            textrect = textSurface.get_rect()
-            textRect.center = ((screenWidth/2), screenHeight/2)
-            errMessage = screen.blit(textSurface, textRect)
+        else:
+            print("Error: did not receive a proper response from the server for syncing.", file=sys.stderr)
 
         # =========================================================================================
 
@@ -202,86 +227,70 @@ def playGame(screenWidth:int, screenHeight:int, playerPaddle:str, client:socket.
 # the screen width, height and player paddle (either "left" or "right")
 # If you want to hard code the screen's dimensions into the code, that's fine, but you will need to know
 # which client is which
-def joinServer(ip: str, port: str, username: str, password: str, errorLabel: tk.Label, app: tk.Tk) -> None:
-    # Author:        Kevin Cosby, Oskar Flores
-    #
-    # Purpose:       Creates an initial connection to the server, receives parameters to initialize the game with,
-    #                handles any errors or exceptions gracefully, starts the game if valid parameters received and
-    #                connection to the server was successful
-    #
-    # Pre:           expects ip and port to point to a valid server instance, otherwise an exception will be raised.
-    #                expects the username and password to be a valid combination, with the password being a sha-256 hash
-    #                and not a plaintext password. errorLabel is for displaying errors in the UI, and the app is so that
-    #                this method can hide the window and kill the app once the game is over
-    #
-    # Post:          This method will hide the tk UI, start the game, and then finally kill the tk app and the entire
-    #                program once the game has ended. Otherwise, just returns nothing and we remain in the UI
-    #
-    # Arguments:
-    #                ip            A string holding the IP address of the server
-    #                port          A string holding the port the server is using
-    #                username      A string holding the plaintext username for the player
-    #                password      A string holding the sha256 hash of the password in hexadecimal format.
-    #                errorLabel    A tk label widget, modify it's text to display messages to the user (example below)
-    #                app           The tk window object, needed to kill the window
+def joinServer(ip: str, port: str, username: str, password: str, gameid: str, errorLabel: tk.Label, app: tk.Tk) -> None:
     
-    # Get the required information from your server (screen width, height & player paddle, "left" or "right")
+    # create a client-server connection using the ip/port provided
+    client = None
     try:
         # create a socket and connect to the server
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        # set 5 second timeout
-        client.settimeout(5)
+        # set timeout
+        client.settimeout(30)
         # attempt to connect
         client.connect((ip, int(port)))
-        
-        # use a dict to hold user information
-        player_info = {
-            "username": username,
-            "password": password,
-            "request": "get_parameters"
-        }
-        
-        # send this data to the server.
-        client.sendall(json.dumps(player_info).encode('utf-8'))
-
-        # Receive server response (json):
-        data = client.recv(1024)
-        server_response = json.loads(data.decode('utf-8'))
-        
-        # parse the data received from the server
-        x_res = server_response.get("x_res", "Unknown")
-        y_res = server_response.get("y_res", "Unknown")
-        paddle_position = server_response.get("paddle_position", "Unknown")
-        
-        # ensure the validity of the data we received
-        errors = []
-        if not isinstance(x_res, int):
-            errors.append(f"invalid x resolution received from the server. Value: {x_res}")
-        if not isinstance(y_res, int):
-            errors.append(f"invalid y resolution received from the server. Value: {y_res}")
-        if paddle_position not in ["player1", "player2"]:
-            errors.append(f"invalid paddle position received from the server. Value: {paddle_position}")
-        
-        # if any errors were received, update the error label to display them and return from this function
-        # this should result in the user still being on the startup screen with the error message printed.
-        if errors:
-            errorLabel.config(text="\n".join(errors))
-            errorLabel.update()
-            return
-        
-        # Hides the window for settings
-        app.withdraw()
-        # if we have passed these checks and have valid information, play the game with these params
-        
-        playGame(x_res, y_res, paddle_position, client)
-        # kills the window (effectively quitting the program)
-        app.quit()
     except Exception as e:
-        # if any exceptions were caught, update the error label to display it and return from this function
-        # this should result in the user still being on the startup screen with the error message printed.
+        # if it failed, print an error and update the error text in the GUI
+        print(f"Error connecting to the server. Exception: {e}")
         errorLabel.config(text=f"Exception received: {e}")
         errorLabel.update()
+        # return since we can't do anything further and it requires user input
         return
+   
+    # get a reponse from the server. The server will request credentials at this point
+    server_response = utility.receive_message(client)
+
+    if server_response and server_response.get("request") == "credentials":
+        credentials = {
+            "request": "credentials",
+            "username": username,
+            "password": password,
+            "gameid": gameid
+        }
+        # send credentials to the server
+        utility.send_message(client, credentials)
+    
+    # wait for the go-ahead to start the game from the server
+    while True:
+        # receives a response from the server (will happen when we get the go-ahead to start the game)
+        server_response = utility.receive_message(client)
+        
+        # if it's a request to start the game, perform related logic to begin the game
+        if server_response.get("request") == "start_game":
+            # collect parameters for initializing the game. 
+            x_res = server_response.get("x_res", "Unknown")
+            y_res = server_response.get("y_res", "Unknown")
+            paddle = server_response.get("paddle", "Unknown")
+            
+            # test for validity of the parameters
+            errors = []
+            if not (isinstance(x_res, int) or isinstance(y_res, int)):
+                errors.append(f"Invalid x or y resolution received from the server. x_res: {x_res}, y_res: {y_res}")
+            if paddle not in ["player1", "player2"]:
+                errors.append(f"Invalid paddle position, paddle: {paddle}")
+            
+            # display any errors that may have happened with the parameters accepted from the server
+            if errors:
+                err_text = "\n".join(errors)
+                errorLabel.config(text=err_text)
+                errorLabel.update()
+                print(err_text)
+
+            # hides the window for the settings
+            app.withdraw()
+            # start the game
+            playGame(x_res, y_res, paddle, client)
+            # quit the program after the game has ended
+            app.quit()
 
 # This displays the opening screen, you don't need to edit this (but may if you like)
 def startScreen():
@@ -297,37 +306,47 @@ def startScreen():
     titleLabel = tk.Label(image=image)
     titleLabel.grid(column=0, row=0, columnspan=2)
     
+    # defaults for ease of use
+    ipVar = tk.StringVar(value="localhost")
+    portVar = tk.StringVar(value="1234")
+    usernameVar = tk.StringVar(value="1")
+    passwordVar = tk.StringVar(value="1")
+    gameidVar = tk.StringVar(value="1")
+    
     # ip label
     ipLabel = tk.Label(text="Server IP:")
     ipLabel.grid(column=0, row=1, sticky="W", padx=8)
     # ip entry box
-    ipEntry = tk.Entry(app)
+    ipEntry = tk.Entry(app, textvariable=ipVar)
     ipEntry.grid(column=1, row=1)
-    
+
     # port label
     portLabel = tk.Label(text="Server Port:")
     portLabel.grid(column=0, row=2, sticky="W", padx=8)
     # port entry box
-    portEntry = tk.Entry(app)
+    portEntry = tk.Entry(app, textvariable=portVar)
     portEntry.grid(column=1, row=2)
     
     # username label
     usernameLabel = tk.Label(text="Username:")
     usernameLabel.grid(column=0, row=3, sticky="W", padx=8)
     # username entry box
-    usernameEntry = tk.Entry(app)
+    usernameEntry = tk.Entry(app, textvariable=usernameVar)
     usernameEntry.grid(column=1, row=3)
 
     # password label
     passwordLabel = tk.Label(text="Password:")
     passwordLabel.grid(column=0, row=4, sticky="W", padx=8)
     # password entry box
-    passwordEntry = tk.Entry(app)
+    passwordEntry = tk.Entry(app, textvariable=passwordVar)
     passwordEntry.grid(column=1, row=4)
-    
-    # error label (this was here before, not written by us)
-    errorLabel = tk.Label(text="")
-    errorLabel.grid(column=0, row=6, columnspan=2)
+
+    # gameid label
+    gameidLabel = tk.Label(text="Game ID:")
+    gameidLabel.grid(column=0, row=5, sticky="W", padx=8)
+    # gameid entry box
+    gameidEntry = tk.Entry(app, textvariable=gameidVar)
+    gameidEntry.grid(column=1, row=5)
     
     # display join button at the bottom. When the join button is clicked, the joinServer function is called.
     # joinSever will accept the ip, port, username, encrypted password, as well as a label where error text
@@ -336,16 +355,23 @@ def startScreen():
                                                                    portEntry.get(), 
                                                                    usernameEntry.get(), 
                                                                    hashlib.sha256(passwordEntry.get().encode()).hexdigest(),
+                                                                   gameidEntry.get(),
                                                                    errorLabel, 
                                                                    app))
     
     # define location of jumpbutton
-    joinButton.grid(column=0, row=5, columnspan=2)
+    joinButton.grid(column=0, row=6, columnspan=2)
+    
+    # error label (this was here before, not written by us)
+    errorLabel = tk.Label(text="")
+    errorLabel.grid(column=0, row=7, columnspan=2)
     
     # display the tkinter UI menu
     app.mainloop()
 
+
 if __name__ == "__main__":
+    
     startScreen()
     
     # Uncomment the line below if you want to play the game without a server to see how it should work

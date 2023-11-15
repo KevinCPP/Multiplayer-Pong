@@ -1,20 +1,24 @@
+import sys
 import socket
 import threading
 import json
 
 from gameInstance import GameInstance
+import utility
 
 class PongServer:
-    def __init__(self, ip="localhost", port="1234"):
+    def __init__(self, ip="localhost", port=1234):
         self.instances = {}
+        thread = threading.Thread(target=self.listen, args=(ip, port))
+        thread.start()
 
-    def listen(self):
+    def listen(self, ip, port):
         # create a TCP socket instance using IPv4 addressing
-        server = socket.server(socket.AF_INET, socket.SOCK_STREAM)
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         # Set the socket option to reuse the address. Helps prevent errors
         # such as "address already in use" when restarting the server
-        server.setsockopt(socket.SOL_SCOKET, socket.SO_REUSEADDR, 1)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
         # bind the socket to the ip and port provided
         server.bind((ip, port))
@@ -22,42 +26,103 @@ class PongServer:
         # allow a maximum of 2 connections to be queued waiting in line
         # before the server will decline new connections
         server.listen(2)
-
+        
+        # main loop that listens for client connections
         while True:
-            client_socket, addr = server.accept()
-            request_message = json.dumps({"request": "credentials"})
+            client_socket = None
+            addr = None
+            try:
+                # accept client connection
+                client_socket, addr = server.accept()
+            except Exception as e:
+                print(f"Error in server accepting client connection: {e}", file=sys.stderr)
+                continue
 
-            client_socket.sendall(request_message.encode('utf-8'))
-            response = client_socket.recv(1024).decode('utf-8')
-            credentials = json.loads(response)
-
-            username = credentials.get("username")
-            password = credentials.get("password")
-            gameid = credentials.get("gameid")
-
-            instance = self.find_instance_index(gameid)
-            added = False
-            if instance:
-                added = instance.add_client_socket(client_socket)
-            else:
-                self.create_instance(gameid)
-                instance = self.find_instance_index(gameid)
-                added = instance.add_client_socket(client_socket)
+            # request their credentials
+            request_message = {"request": "credentials"}
+            # send the credentials request to the client. continue to next iteration
+            # if it fails (will print an error message to stderr)
+            if not utility.send_message(client_socket, request_message):
+                continue
             
-            if not added:
-                error_msg = json.dumps({
-                        "error": "game is full!"
-                    })
-                client_socket.sendall(error_msg.encode('utf-8'))
-                client_socket.close() 
+            # receive a response about credentials from the client. If this fails,
+            # continue to next iteration (an error message will be printed)
+            response = utility.receive_message(client_socket) 
+            if not response or response.get("request") != "credentials":
+                print(f"Invalid response sent to the server for credentials.", file=sys.stderr)
+                continue
+            
+            # derive the username, hashed password, and gameid they provided
+            username = response.get("username")
+            password = response.get("password")
+            gameid = response.get("gameid")
+            
+            # fetch game instance from gameid
+            instance = self.find_instance(gameid)
 
+            # if there is no game instance, create a new one and add the player 
+            if not instance:
+                self.create_instance(gameid)
+                instance = self.find_instance(gameid)
+            
+            # if we fail to add the player, that means the game is full, and thus
+            # they cannot join. Send an error message, and close their connection,
+            # requiring them to reconnect to the game with a different gameid
+            if not instance.add_client_socket(client_socket):
+                error_msg = {"error": "game is full!"}
+                utility.send_message(client_socket, error_msg)
+                client_socket.close()
+            else:
+                thread = threading.Thread(target=self.handle_instance, args=(gameid,))
+                thread.start()
+    
+    # handle client/server communication for an instance given a gameid
     def handle_instance(self, gameid):
+        # fetch the instance from gameid
         instance = self.find_instance(gameid)
+
+        # if it doesn't find the instance, this is a fatal error
         if not instance:
             raise RuntimeError("Invalid instance in handle_instance!")
-        
 
-         
+        if not instance.is_game_started():
+            return
+        
+        while True:
+            # iterate through both clients in the instance, and handle communications
+            for i, client in enumerate(instance.client_sockets):
+
+                data = utility.receive_message(client) 
+                if not data:
+                    continue
+                
+                # handle the sync request by sending the server's game state back to the client,
+                # so that they can do what is needed to resync their game.
+                if data.get("request") == "sync":
+                    utility.send_message(client, instance.state)
+             
+                # collect some variables from the client and ensure that it all matches up
+                if data.get("request") == "update_state":
+                    # collect variables from the update_state request
+                    ypos = data.get("ypos")
+                    ballx = data.get("ballx")
+                    bally = data.get("bally")
+                    ballxvel = data.get("ballxvel")
+                    ballyvel = data.get("ballyvel")
+                    score = data.get("score")
+                    sync = data.get("sync")
+                    
+                    # check to ensure they're all valid
+                    for var in [ypos, ballx, bally, ballxvel, ballyvel, score, sync]:
+                        if var is None:
+                            print(f"Error: invalid data passed to update_state request. ypos={ypos}, ballx={ballx}, bally={bally}, score={score}, sync={sync}", file=sys.stderr)
+                    
+                    # update the values in instance
+                    instance.set_pos(i, ypos)
+                    instance.set_ball_pos(ballx, bally)
+                    instance.set_ball_vel(ballxvel, ballyvel)
+                    instance.set_score(i, score)
+                    instance.set_sync(i, sync)
 
 
     # retrieves a game instance based on the gameid if it
@@ -72,74 +137,6 @@ class PongServer:
     def create_instance(self, gameid):
         self.instances[gameid] = GameInstance()
 
-
-def handle_client(client_socket, player_id, opponent_id):
-    global game_state
-
-    while True:
-        try:
-            data = client_socket.recv(1024)
-            if not data:
-                break
-
-            client_request = json.loads(data.decode('utf-8'))
-
-            if client_request["request"] == "update_paddle":
-                # Update the paddle position for this player
-                game_state[player_id]['y_pos'] = client_request['y_pos']
-
-            elif client_request["request"] == "get_opponent_paddle":
-                # Send the opponent's paddle position to this player
-                response = {'opponent_y': game_state[opponent_id]['y_pos']}
-                client_socket.sendall(json.dumps(response).encode('utf-8'))
-
-            elif client_request["request"] == "get_parameters":
-                # Send game parameters to the player
-                response = {
-                    'x_res': 640,  # Example resolution, adjust as needed
-                    'y_res': 480,
-                    'paddle_position': player_id
-                }
-                client_socket.sendall(json.dumps(response).encode('utf-8'))
-
-        except Exception as e:
-            print(f"Error with client {player_id}: {e}")
-            break
-
-    client_socket.close()
-    print(f"Client {player_id} disconnected")
-
-def start_server():
-
-def start_server():
-    global game_state
-    game_state = {
-        'player1': {'y_pos': 0}, 
-        'player2': {'y_pos': 0},
-        'ball' {'x': 0, 'y': 0},
-        'sync': {'p1': 0, 'p2': 0},
-    }
-
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind(("localhost", 12345))  # Adjust the port if needed
-    server.listen(2)
-    print("Server listening for connections...")
-
-    clients = []
-
-    while len(clients) < 2:
-        client_socket, addr = server.accept()
-        player_id = 'player1' if len(clients) == 0 else 'player2'
-        opponent_id = 'player2' if player_id == 'player1' else 'player1'
-        print(f"Connection from {addr} as {player_id}")
-
-        client_thread = threading.Thread(target=handle_client, args=(client_socket, player_id, opponent_id))
-        client_thread.start()
-        clients.append(client_socket)
-
-    print("Both players connected. Game can start.")
-
 if __name__ == "__main__":
-    start_server()
+    server = PongServer()
 
