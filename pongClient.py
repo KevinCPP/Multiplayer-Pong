@@ -272,6 +272,7 @@ def joinServer(ip: str, port: str, username: str, password: str, errorLabel: tk.
         # Hides the window for settings
         app.withdraw()
         # if we have passed these checks and have valid information, play the game with these params
+        
         playGame(x_res, y_res, paddle_position, client)
         # kills the window (effectively quitting the program)
         app.quit()
