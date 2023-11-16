@@ -29,7 +29,7 @@ class PongClient:
 # This is the main game loop.  For the most part, you will not need to modify this.  The sections
 # where you should add to the code are marked.  Feel free to change any part of this project
 # to suit your needs.
-    def playGame(self, screenWidth, screenHeight, playerPaddle, client):
+    def playGame(self, screenWidth, screenHeight, playerPaddle, client) -> None:
     
         # Constants
         WHITE = (255, 255, 255)
