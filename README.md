@@ -13,7 +13,7 @@ Github Link: https://github.com/KevinCPP/Multiplayer-Pong
 
 General Info
 ============
-This file describes how to install/run your program and anything else you think the user should know
+This project, creates a multiplayer game of the Atari classic video game “Pong”. This project is done using client-server architecture and socket programming.
 
 Install Instructions
 ====================
@@ -25,7 +25,6 @@ Run the following line to install the required libraries for this project:
 
 Known Bugs
 ==========
-- The server doesn't work because the logic isn't yet written.
-- The client doesn't speak to the server
+- None
 
 
