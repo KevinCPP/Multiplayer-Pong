@@ -24,12 +24,31 @@ class PongClient:
         # Pygame inits
         pygame.mixer.pre_init(44100, -16, 2, 2048)
         pygame.init()
-       
+        self.client = None
+        self.sync = 0
+        self.desync = 0
+        self.sync_every_n = 2
+
+    def send_update_state(self, ypos, ballx, bally, ballxvel, ballyvel, sync_var, score):
+            update_state = {
+                "request": "update_state",
+                "ypos": ypos,
+                "ballx": ballx,
+                "bally": bally,
+                "ballxvel": ballxvel,
+                "ballyvel": ballyvel,
+                "sync": sync_var,
+                "score": score,
+            }
+            utility.send_message(self.client, update_state)
+
+
+
 
 # This is the main game loop.  For the most part, you will not need to modify this.  The sections
 # where you should add to the code are marked.  Feel free to change any part of this project
 # to suit your needs.
-    def playGame(self, screenWidth, screenHeight, playerPaddle, client) -> None:
+    def playGame(self, screenWidth, screenHeight, playerPaddle) -> None:
     
         # Constants
         WHITE = (255, 255, 255)
@@ -70,10 +89,6 @@ class PongClient:
         lScore = 0
         rScore = 0
 
-        sync = 0
-        desync = 0
-        sync_every_n = 2
-
         while True:
             # Wiping the screen
             screen.fill((0,0,0))
@@ -104,19 +119,8 @@ class PongClient:
             else:
                 which_score = rScore
 
-            update_state = {
-                "request": "update_state",
-                "ypos": playerPaddleObj.rect.y,
-                "ballx": ball.rect.x,
-                "bally": ball.rect.y,
-                "ballxvel": ball.xVel,
-                "ballyvel": ball.yVel,
-                "sync": sync,
-                "score": which_score,
-            }
+            self.send_update_state(playerPaddleObj.rect.y, ball.rect.x, ball.rect.y, ball.xVel, ball.yVel, self.sync, which_score)
 
-            utility.send_message(client, update_state)
-        
             # =========================================================================================
 
             # Update the player paddle and opponent paddle's location on the screen
@@ -184,45 +188,46 @@ class PongClient:
             # This number should be synchronized between you and your opponent.  If your number is larger
             # then you are ahead of them in time, if theirs is larger, they are ahead of you, and you need to
             # catch up (use their info)
-            sync += 1
+            self.sync += 1
         
             # =========================================================================================
             # Send your server update here at the end of the game loop to sync your game with your
             # opponent's game
-            utility.send_message(client, {"request": "sync"})
-            response = utility.receive_message(client)
-        
-            if response:
-                p1_ypos = response.get("p1_ypos")
-                p2_ypos = response.get("p2_ypos")
-                ballx = response.get("ballx")
-                bally = response.get("bally")
-                ballxvel = response.get("ballxvel")
-                ballyvel = response.get("ballyvel")
-                p1_score = response.get("p1_score")
-                p2_score = response.get("p2_score")
-                p1_sync = response.get("p1_sync")
-                p2_sync = response.get("p2_sync")
             
-                if playerPaddle == "player1" and (p2_sync < sync):
-                    desync = sync - p2_sync
-                    #playerPaddleObj.rect.y = p1_ypos
-                    opponentPaddleObj.rect.y = p2_ypos
-                elif playerPaddle == "player2" and (p1_sync < sync):
-                    desync = sync - p1_sync
-                    #playerPaddleObj.rect.y = p2_ypos
-                    opponentPaddleObj.rect.y = p1_ypos
+            if (self.sync % self.sync_every_n == 0) or self.desync > self.sync_every_n:
+                utility.send_message(self.client, {"request": "sync"})
+                response = utility.receive_message(self.client)
             
-                if desync > 1 or (sync % sync_every_n == 0):
+                if response:
+                    p1_ypos = response.get("p1_ypos")
+                    p2_ypos = response.get("p2_ypos")
+                    ballx = response.get("ballx")
+                    bally = response.get("bally")
+                    ballxvel = response.get("ballxvel")
+                    ballyvel = response.get("ballyvel")
+                    p1_score = response.get("p1_score")
+                    p2_score = response.get("p2_score")
+                    p1_sync = response.get("p1_sync")
+                    p2_sync = response.get("p2_sync")
+                
+                    if playerPaddle == "player1" and (p2_sync < self.sync):
+                        self.desync = self.sync - p2_sync
+                        opponentPaddleObj.rect.y = p2_ypos
+                    elif playerPaddle == "player2" and (p1_sync < self.sync):
+                        self.desync = self.sync - p1_sync
+                        opponentPaddleObj.rect.y = p1_ypos
+                
+                    #if self.desync > 1 or (self.sync % self.sync_every_n == 0):
                     ball.rect.x = ballx
                     ball.rect.y = bally
                     ball.xVel = ballxvel
                     ball.yVel = ballyvel
                     lScore = p1_score
                     rScore = p2_score
-
-            else:
-                print("Error: did not receive a proper response from the server for syncing.", file=sys.stderr)
+                    self.desync = 0
+                else:
+                    print("Error: did not receive a proper response from the server for syncing.", file=sys.stderr)
+            
 
             # =========================================================================================
 
@@ -232,14 +237,13 @@ class PongClient:
     # which client is which
     def joinServer(self, ip, port, username, password, gameid, errorLabel, app):
         # create a client-server connection using the ip/port provided
-        client = None
         try:
             # create a socket and connect to the server
-            client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             # set timeout
-            client.settimeout(30)
+            self.client.settimeout(30)
             # attempt to connect
-            client.connect((ip, int(port)))
+            self.client.connect((ip, int(port)))
         except Exception as e:
             # if it failed, print an error and update the error text in the GUI
             print(f"Error connecting to the server. Exception: {e}", file=sys.stderr)
@@ -248,7 +252,7 @@ class PongClient:
             return
    
         # get a response from the server. The server will request credentials at this point
-        server_response = utility.receive_message(client)
+        server_response = utility.receive_message(self.client)
 
         # Check if the server_response is not None before proceeding
         if server_response is None:
@@ -265,18 +269,17 @@ class PongClient:
                 "gameid": gameid
             }
             # send credentials to the server
-            utility.send_message(client, credentials)
+            utility.send_message(self.client, credentials)
     
         # wait for the go-ahead to start the game from the server
         while True:
-            server_response = utility.receive_message(client)
+            server_response = utility.receive_message(self.client)
 
             # Again, check if server_response is not None
             if server_response is None:
-                print("Error: No response received from the server.", file=sys.stderr)
-                errorLabel.config(text="No response received from the server.")
+                print("No response received from server. Still waiting...", file=sys.stderr)
+                errorLabel.config(text="No response received from server. Still waiting...")
                 errorLabel.update()
-                return
 
             # if it's a request to start the game, perform related logic to begin the game
             if server_response.get("request") == "start_game":
@@ -303,7 +306,7 @@ class PongClient:
                 # hides the window for the settings
                 app.withdraw()
                 # start the game
-                self.playGame(x_res, y_res, paddle, client)
+                self.playGame(x_res, y_res, paddle)
                 # quit the program after the game has ended
                 app.quit()
                 return
