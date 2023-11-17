@@ -254,7 +254,13 @@ class PongClient:
     # the screen width, height and player paddle (either "left" or "right")
     # If you want to hard code the screen's dimensions into the code, that's fine, but you will need to know
     # which client is which
-    def joinServer(self):
+    def joinServer(self, ip, port, username, password, gameid):
+        self.ip = ip
+        self.port = port
+        self.gameid = gameid
+        self.username = username
+        self.password = password
+        
         # create a client-server connection using the ip/port provided
         try:
             # create a socket and connect to the server
@@ -275,12 +281,13 @@ class PongClient:
 
         # Check if the server_response is not None before proceeding
         if server_response is None:
-            print("Error: No response received from the server.", file=sys.stderr)
+            #print("Error: No response received from the server.", file=sys.stderr)
             self.errorLabel.config(text="No response received from the server.")
             self.errorLabel.update()
             return
 
         if server_response and server_response.get("request") == "credentials":
+            print(f"sending credentials. Username={self.username}")
             credentials = {
                 "request": "credentials",
                 "username": self.username,
@@ -289,19 +296,25 @@ class PongClient:
             }
             # send credentials to the server
             utility.send_message(self.client, credentials)
-    
+   
+        server_response = utility.receive_message(self.client)
+        if server_response and server_response.get("request") == "bad_password":
+            self.errorLabel.config(text="User already exists/incorrect password")
+            self.errorLabel.update()
+            return
+
         # wait for the go-ahead to start the game from the server
         while True:
             server_response = utility.receive_message(self.client)
 
             # Again, check if server_response is not None
             if server_response is None:
-                print("No response received from server. Still waiting...", file=sys.stderr)
+                #print("No response received from server. Still waiting...", file=sys.stderr)
                 self.errorLabel.config(text="No response received from server. Still waiting...")
                 self.errorLabel.update()
 
             # if it's a request to start the game, perform related logic to begin the game
-            if server_response.get("request") == "start_game":
+            elif server_response.get("request") == "start_game":
                 # collect parameters for initializing the game
                 x_res = server_response.get("x_res", "Unknown")
                 y_res = server_response.get("y_res", "Unknown")
@@ -388,15 +401,15 @@ class PongClient:
         # error label
         self.errorLabel = tk.Label(text="")
         self.errorLabel.grid(column=0, row=7, columnspan=2)
-
-        self.ip = ipEntry.get()
-        self.port = portEntry.get()
-        self.username = usernameEntry.get()
-        self.password = hashlib.sha256(passwordEntry.get().encode()).hexdigest()
-        self.gameid = gameidEntry.get()
         
         # display join button at the bottom. When the join button is clicked, the joinServer method is called
-        joinButton = tk.Button(text="Join", command=lambda: self.joinServer())
+        joinButton = tk.Button(text="Join", command=lambda: self.joinServer(
+                        ipEntry.get(),
+                        portEntry.get(),
+                        usernameEntry.get(),
+                        hashlib.sha256(passwordEntry.get().encode()).hexdigest(),
+                        gameidEntry.get(),
+                    ))
 
         joinButton.grid(column=0, row=6, columnspan=2)
     

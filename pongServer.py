@@ -9,6 +9,7 @@
 import sys
 import socket
 import threading
+import sqlite3
 import json
 
 from gameInstance import GameInstance
@@ -19,6 +20,74 @@ class PongServer:
         self.instances = {}
         thread = threading.Thread(target=self.listen, args=(ip, port))
         thread.start()
+
+    def add_user_to_database(self, client_socket, username, password):
+        conn = sqlite3.connect('users.db')
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                username TEXT PRIMARY KEY,
+                password TEXT NOT NULL,
+                num_wins INTEGER DEFAULT 0);
+            ''');
+        
+        try:
+            # Check if the username already exists
+            cursor.execute("SELECT password FROM users WHERE username = ?", (username,))
+            record = cursor.fetchone()
+
+            if record:
+                # Username exists, check password
+                stored_password = record[0]
+                if stored_password != password:
+                    # Password does not match
+                    utility.send_message(client_socket, {"request": "bad_password"})
+                    print(f"Incorrect password for {username} entered.")
+                    return False
+                else:
+                    utility.send_message(client_socket, {"request": "login_success"})
+                    return True
+            else:
+                # Username does not exist, add new user
+                cursor.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, password))
+                conn.commit()
+                print(f"User {username} added to the database.")
+                utility.send_message(client_socket, {"request": "login_success"})
+                return True
+        except sqlite3.Error as e:
+            print(f"Database error: {e}", file=sys.stderr)
+            return False
+        finally:
+            conn.close()
+
+    def increment_user_wins(self, username):
+        conn = sqlite3.connect('users.db')  # Replace with your database file path
+        cursor = conn.cursor()
+
+        try:
+            # Check if the user exists
+            cursor.execute("SELECT num_wins FROM users WHERE username = ?", (username,))
+            record = cursor.fetchone()
+
+            if record:
+                # User exists, increment num_wins
+                num_wins = record[0] + 1
+                cursor.execute("UPDATE users SET num_wins = ? WHERE username = ?", (num_wins, username))
+                conn.commit()
+                print(f"Updated wins for {username}: {num_wins} wins.")
+            else:
+                # User does not exist
+                print(f"User {username} not found in the database.")
+        except sqlite3.Error as e:
+            print(f"Database error: {e}", file=sys.stderr)
+        finally:
+            conn.close()
+
+    # To increment wins for a user, call this function
+    # increment_user_wins('username')
+
+
 
     def listen(self, ip, port):
         # create a TCP socket instance using IPv4 addressing
@@ -64,7 +133,10 @@ class PongServer:
             username = response.get("username")
             password = response.get("password")
             gameid = response.get("gameid")
-            
+            if not self.add_user_to_database(client_socket, username, password):
+                print(f"username provided invalid password.")
+                continue
+
             # fetch game instance from gameid
             instance = self.find_instance(gameid)
 
@@ -76,7 +148,7 @@ class PongServer:
             # if we fail to add the player, that means the game is full, and thus
             # they cannot join. Send an error message, and close their connection,
             # requiring them to reconnect to the game with a different gameid
-            if not instance.add_client_socket(client_socket):
+            if not instance.add_client_socket(client_socket, username):
                 error_msg = {"error": "game is full!"}
                 utility.send_message(client_socket, error_msg)
                 client_socket.close()
@@ -132,6 +204,8 @@ class PongServer:
                     instance.set_ball_vel(ballxvel, ballyvel)
                     instance.set_score(i, score)
                     instance.set_sync(i, sync)
+                    if score >= 1:
+                        self.increment_user_wins(instance.get_username(i))
                 
                 if data.get("request") == "play_again":
                     play_again_set.add(i)

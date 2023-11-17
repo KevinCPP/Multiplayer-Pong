@@ -37,12 +37,14 @@ class GameInstance:
         }
 
         self.client_sockets = []
+        self.usernames = []
 
-    def add_client_socket(self, client_socket) -> bool:
+    def add_client_socket(self, client_socket, username) -> bool:
         if len(self.client_sockets) >= 2:
             return False
 
         self.client_sockets.append(client_socket)
+        self.usernames.append(username)
         if len(self.client_sockets) == 2:
             self.state["game_started"] = True
             for i, client in enumerate(self.client_sockets):
@@ -50,7 +52,10 @@ class GameInstance:
                 utility.send_message(client, self.start_game_request)
 
         return True
-    
+   
+    def get_username(self, i):
+        return self.usernames[i]
+
     def is_game_started(self) -> bool:
         return self.state["game_started"]
 
