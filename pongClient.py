@@ -22,44 +22,58 @@ from assets.code.helperCode import *
 
 class PongClient:
     def __init__(self):
+        # ==================================================
+        # Authors: Kevin Cosby, Oskar Flores
+        # Purpose: sets up pongclient
+        # Pre: none
+        # Post: sets up variables for pongClient
+        # ==================================================
+
         # Pygame inits
         pygame.mixer.pre_init(44100, -16, 2, 2048)
         pygame.init()
-        self.client = None
-        self.sync = 0
-        self.desync = 0
-        self.sync_every_n = 2
-        self.game_over = False
-        self.max_score = 1
-        self.play_again_not_sent = True
-
-        self.errorLabel = None
-        self.username = None
-        self.password = None
-        self.gameid = None
-        self.port = None
-        self.app = None
-        self.ip = None
+        self.client = None                  # client socket connection
+        self.sync = 0                       # sync variable
+        self.desync = 0                     # how many frames out of sync are the two clients
+        self.sync_every_n = 2               # how often to perform a resync operation
+        self.game_over = False              # is the game currently ended
+        self.max_score = 1                  # maximum score needed to win
+        self.play_again_not_sent = True     # has the player NOT pressed enter to play again
+        
+        
+        self.errorLabel = None  # used for displaying errors in the UI
+        self.username = None    # stores the username
+        self.password = None    # stores the password
+        self.gameid = None      # stores the gameid
+        self.port = None        # what port to connect to
+        self.app = None         # base tk app
+        self.ip = None          # what ip to connect to
         
 
-    def send_update_state(self, ypos, ballx, bally, ballxvel, ballyvel, sync_var, score):
-            update_state = {
-                "request": "update_state",
-                "ypos": ypos,
-                "ballx": ballx,
-                "bally": bally,
-                "ballxvel": ballxvel,
-                "ballyvel": ballyvel,
-                "sync": sync_var,
-                "score": score,
-            }
-            utility.send_message(self.client, update_state)
+    def send_update_state(self, ypos: int, ballx: int, bally: int, ballxvel: int, ballyvel: int, sync_var: int, score: int):
+        # ==================================================
+        # Authors: Kevin Cosby, Oskar Flores
+        # Purpose: sends message to the server to update the state
+        # Pre: valid state vars
+        # Post: sends signal to update state on server side
+        # ==================================================
+        update_state = {
+            "request": "update_state",
+            "ypos": ypos,
+            "ballx": ballx,
+            "bally": bally,
+            "ballxvel": ballxvel,
+            "ballyvel": ballyvel,
+            "sync": sync_var,
+            "score": score,
+        }
+        utility.send_message(self.client, update_state)
 
 
 # This is the main game loop.  For the most part, you will not need to modify this.  The sections
 # where you should add to the code are marked.  Feel free to change any part of this project
 # to suit your needs.
-    def playGame(self, screenWidth, screenHeight, playerPaddle) -> None:
+    def playGame(self, screenWidth: int, screenHeight: int, playerPaddle: str) -> None:
     
         # Constants
         WHITE = (255, 255, 255)
@@ -115,7 +129,8 @@ class PongClient:
 
                     elif event.key == pygame.K_UP:
                         playerPaddleObj.moving = "up"
-
+                    
+                    # if the game is over and the user presses enter, send a "play_again" request to the server
                     elif event.key == pygame.K_RETURN and self.game_over:
                         if self.play_again_not_sent:
                             utility.send_message(self.client, {"request": "play_again"})
@@ -128,13 +143,15 @@ class PongClient:
             # Your code here to send an update to the server on your paddle's information,
             # where the ball is and the current score.
             # Feel free to change when the score is updated to suit your needs/requirements
-
+            
+            # determine which score to send to the server based off which player we are
             which_score = 0
             if playerPaddle == "player1":
                 which_score = lScore
             else:
                 which_score = rScore
             
+            # update the server's state
             if not self.game_over:
                 self.send_update_state(playerPaddleObj.rect.y, ball.rect.x, ball.rect.y, ball.xVel, ball.yVel, self.sync, which_score)
 
@@ -213,11 +230,15 @@ class PongClient:
             # Send your server update here at the end of the game loop to sync your game with your
             # opponent's game
             
+            # synchronizes the client and server state. This will happen if the two become out of sync,
+            # and only happens every sync_every_n frames
             if ((self.sync % self.sync_every_n == 0) or self.desync > self.sync_every_n):# and not self.game_over:
+                # request sync from server and get response
                 utility.send_message(self.client, {"request": "sync"})
                 response = utility.receive_message(self.client)
             
                 if response:
+                    # extract state vars from response
                     p1_ypos = response.get("p1_ypos")
                     p2_ypos = response.get("p2_ypos")
                     ballx = response.get("ballx")
@@ -228,7 +249,8 @@ class PongClient:
                     p2_score = response.get("p2_score")
                     p1_sync = response.get("p1_sync")
                     p2_sync = response.get("p2_sync")
-                
+                    
+                    # update the client state
                     if playerPaddle == "player1" and (p2_sync < self.sync):
                         self.desync = self.sync - p2_sync
                         opponentPaddleObj.rect.y = p2_ypos
@@ -236,7 +258,6 @@ class PongClient:
                         self.desync = self.sync - p1_sync
                         opponentPaddleObj.rect.y = p1_ypos
                 
-                    #if self.desync > 1 or (self.sync % self.sync_every_n == 0):
                     ball.rect.x = ballx
                     ball.rect.y = bally
                     ball.xVel = ballxvel
@@ -254,7 +275,13 @@ class PongClient:
     # the screen width, height and player paddle (either "left" or "right")
     # If you want to hard code the screen's dimensions into the code, that's fine, but you will need to know
     # which client is which
-    def joinServer(self, ip, port, username, password, gameid):
+    def joinServer(self, ip: str, port: int, username: str, password: str, gameid: str):
+        # ============================================================
+        # Author: Kevin Cosby, Oskar Flores
+        # Purpose: creates client-server connection and begins the game
+        # Pre: valid ip, port, username, password, gameid. Gameid not already in use
+        # Post: server connection is set up, ip/port/gameid/username/password vars are set
+        # ============================================================
         self.ip = ip
         self.port = port
         self.gameid = gameid
@@ -345,6 +372,12 @@ class PongClient:
 
     # This displays the opening screen, you don't need to edit this (but may if you like)
     def startScreen(self):
+        # ============================================================
+        # Author: Kevin Cosby, Oskar Flores
+        # Purpose: displays the opening screen
+        # pre: none
+        # post: attempts to join the server with provided information
+        # ============================================================
         # initialize TK app
         self.app = tk.Tk()
         self.app.title("Server Info")

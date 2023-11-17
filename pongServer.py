@@ -17,14 +17,28 @@ import utility
 
 class PongServer:
     def __init__(self, ip="localhost", port=1234):
+        # ============================================
+        # Author: Kevin Cosby, Oskar Flores
+        # Purpose: initializes pongServer
+        # Pre: valid ip/port
+        # Post: creates a new thread to listen for connections
+        # ============================================
         self.instances = {}
         thread = threading.Thread(target=self.listen, args=(ip, port))
         thread.start()
 
-    def add_user_to_database(self, client_socket, username, password):
+    def add_user_to_database(self, client_socket: socket.socket, username: str, password: str):
+        # ============================================
+        # Author: Kevin Cosby, Oskar Flores
+        # Purpose: registers a user or checks their password if their username already exists
+        # Pre: valid client_socket, username, password (not empty)
+        # Post: updates the database or sends a signal indicating a failure
+        # ============================================
+        # create connection to users.db, where user data is stored
         conn = sqlite3.connect('users.db')
         cursor = conn.cursor()
-
+        
+        # create the table if it doesn't exist
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 username TEXT PRIMARY KEY,
@@ -32,6 +46,7 @@ class PongServer:
                 num_wins INTEGER DEFAULT 0);
             ''');
         
+        # attempt to validate password or add user
         try:
             # Check if the username already exists
             cursor.execute("SELECT password FROM users WHERE username = ?", (username,))
@@ -61,8 +76,14 @@ class PongServer:
         finally:
             conn.close()
 
-    def increment_user_wins(self, username):
-        conn = sqlite3.connect('users.db')  # Replace with your database file path
+    def increment_user_wins(self, username: str):
+        # ============================================
+        # Author: Kevin Cosby, Oskar Flores
+        # Purpose: increments the number of wins a user has in the DB
+        # Pre: valid username that exists in db
+        # Post: updates the db
+        # ============================================
+        conn = sqlite3.connect('users.db')  
         cursor = conn.cursor()
 
         try:
@@ -84,12 +105,13 @@ class PongServer:
         finally:
             conn.close()
 
-    # To increment wins for a user, call this function
-    # increment_user_wins('username')
-
-
-
-    def listen(self, ip, port):
+    def listen(self, ip: str, port: int):
+        # ============================================
+        # Author: Kevin Cosby, Oskar Flores
+        # Purpose: listens for client connections
+        # Pre: server is set up and bound to (ip, port)
+        # Post: creates new instances and client connections
+        # ============================================
         # create a TCP socket instance using IPv4 addressing
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -157,7 +179,13 @@ class PongServer:
                 thread.start()
 
     # handle client/server communication for an instance given a gameid
-    def handle_instance(self, gameid):
+    def handle_instance(self, gameid: str):
+        # ============================================
+        # Author: Kevin Cosby, Oskar Flores
+        # Purpose: opens up a new thread to handle client communications for one game instance
+        # Pre: all other setup has been done regarding the server/client/gameinstance. Has 2 players
+        # Post: Handles syncing and updating the state, among other things, via the network
+        # ============================================
         # fetch the instance from gameid
         instance = self.find_instance(gameid)
 
@@ -217,14 +245,26 @@ class PongServer:
 
     # retrieves a game instance based on the gameid if it
     # exists
-    def find_instance(self, gameid):
+    def find_instance(self, gameid: str):
+        # ============================================
+        # Author: Kevin Cosby, Oskar Flores
+        # Purpose: fetches an instance from a gameid
+        # Pre: none
+        # Post: none
+        # ============================================
         if gameid in self.instances:
             return self.instances[gameid]
 
         return None
 
     # creates a new instance given a gameid
-    def create_instance(self, gameid):
+    def create_instance(self, gameid: str):
+        # ============================================
+        # Author: Kevin Cosby, Oskar Flores
+        # Purpose: adds a new instance for the given gameid
+        # Pre: none
+        # Post: none
+        # ============================================
         self.instances[gameid] = GameInstance()
 
 if __name__ == "__main__":
