@@ -83,7 +83,7 @@ class PongServer:
             else:
                 thread = threading.Thread(target=self.handle_instance, args=(gameid,))
                 thread.start()
-    
+
     # handle client/server communication for an instance given a gameid
     def handle_instance(self, gameid):
         # fetch the instance from gameid
@@ -96,6 +96,7 @@ class PongServer:
         if not instance.is_game_started():
             return
         
+        play_again_set = set()
         while True:
             # iterate through both clients in the instance, and handle communications
             for i, client in enumerate(instance.client_sockets):
@@ -124,14 +125,21 @@ class PongServer:
                     for var in [ypos, ballx, bally, ballxvel, ballyvel, score, sync]:
                         if var is None:
                             print(f"Error: invalid data passed to update_state request. ypos={ypos}, ballx={ballx}, bally={bally}, score={score}, sync={sync}", file=sys.stderr)
-                    
+                   
                     # update the values in instance
                     instance.set_pos(i, ypos)
                     instance.set_ball_pos(ballx, bally)
                     instance.set_ball_vel(ballxvel, ballyvel)
                     instance.set_score(i, score)
                     instance.set_sync(i, sync)
-
+                
+                if data.get("request") == "play_again":
+                    play_again_set.add(i)
+                    print(f"play again received.", file=sys.stderr)
+                    if 0 in play_again_set and 1 in play_again_set:
+                        instance.set_score(0, 0)
+                        instance.set_score(1, 0)
+                        play_again_set.clear()
 
     # retrieves a game instance based on the gameid if it
     # exists

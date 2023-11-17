@@ -6,6 +6,7 @@
 # Misc:                     Released under GNU GPL v3.0
 # =================================================================================================
 
+import os
 import pygame
 import tkinter as tk
 import sys
@@ -28,6 +29,18 @@ class PongClient:
         self.sync = 0
         self.desync = 0
         self.sync_every_n = 2
+        self.game_over = False
+        self.max_score = 1
+        self.play_again_not_sent = True
+
+        self.errorLabel = None
+        self.username = None
+        self.password = None
+        self.gameid = None
+        self.port = None
+        self.app = None
+        self.ip = None
+        
 
     def send_update_state(self, ypos, ballx, bally, ballxvel, ballyvel, sync_var, score):
             update_state = {
@@ -41,8 +54,6 @@ class PongClient:
                 "score": score,
             }
             utility.send_message(self.client, update_state)
-
-
 
 
 # This is the main game loop.  For the most part, you will not need to modify this.  The sections
@@ -105,9 +116,14 @@ class PongClient:
                     elif event.key == pygame.K_UP:
                         playerPaddleObj.moving = "up"
 
+                    elif event.key == pygame.K_RETURN and self.game_over:
+                        if self.play_again_not_sent:
+                            utility.send_message(self.client, {"request": "play_again"})
+                            play_again_not_sent = False
+
                 elif event.type == pygame.KEYUP:
                     playerPaddleObj.moving = ""
-
+                
             # =========================================================================================
             # Your code here to send an update to the server on your paddle's information,
             # where the ball is and the current score.
@@ -118,8 +134,9 @@ class PongClient:
                 which_score = lScore
             else:
                 which_score = rScore
-
-            self.send_update_state(playerPaddleObj.rect.y, ball.rect.x, ball.rect.y, ball.xVel, ball.yVel, self.sync, which_score)
+            
+            if not self.game_over:
+                self.send_update_state(playerPaddleObj.rect.y, ball.rect.x, ball.rect.y, ball.xVel, ball.yVel, self.sync, which_score)
 
             # =========================================================================================
 
@@ -133,17 +150,19 @@ class PongClient:
                         paddle.rect.y -= paddle.speed
 
             # If the game is over, display the win message
-            if lScore > 4 or rScore > 4:
-                winText = "Player 1 Wins! " if lScore > 4 else "Player 2 Wins! "
+            if lScore >= self.max_score or rScore >= self.max_score:
+                winText = "Player 1 Wins! " if lScore >= self.max_score else "Player 2 Wins! "
                 textSurface = winFont.render(winText, False, WHITE, (0,0,0))
                 textRect = textSurface.get_rect()
                 textRect.center = ((screenWidth/2), screenHeight/2)
                 winMessage = screen.blit(textSurface, textRect)
+                
+                self.game_over = True
             else:
-
+                self.game_over = False
                 # ==== Ball Logic =====================================================================
                 ball.updatePos()
-
+                self.play_again_not_sent = True
                 # If the ball makes it past the edge of the screen, update score, etc.
                 if ball.rect.x > screenWidth:
                     lScore += 1
@@ -194,7 +213,7 @@ class PongClient:
             # Send your server update here at the end of the game loop to sync your game with your
             # opponent's game
             
-            if (self.sync % self.sync_every_n == 0) or self.desync > self.sync_every_n:
+            if ((self.sync % self.sync_every_n == 0) or self.desync > self.sync_every_n):# and not self.game_over:
                 utility.send_message(self.client, {"request": "sync"})
                 response = utility.receive_message(self.client)
             
@@ -235,7 +254,7 @@ class PongClient:
     # the screen width, height and player paddle (either "left" or "right")
     # If you want to hard code the screen's dimensions into the code, that's fine, but you will need to know
     # which client is which
-    def joinServer(self, ip, port, username, password, gameid, errorLabel, app):
+    def joinServer(self):
         # create a client-server connection using the ip/port provided
         try:
             # create a socket and connect to the server
@@ -243,12 +262,12 @@ class PongClient:
             # set timeout
             self.client.settimeout(30)
             # attempt to connect
-            self.client.connect((ip, int(port)))
+            self.client.connect((self.ip, int(self.port)))
         except Exception as e:
             # if it failed, print an error and update the error text in the GUI
             print(f"Error connecting to the server. Exception: {e}", file=sys.stderr)
-            errorLabel.config(text=f"Exception received: {e}")
-            errorLabel.update()
+            self.errorLabel.config(text=f"Exception received: {e}")
+            self.errorLabel.update()
             return
    
         # get a response from the server. The server will request credentials at this point
@@ -257,16 +276,16 @@ class PongClient:
         # Check if the server_response is not None before proceeding
         if server_response is None:
             print("Error: No response received from the server.", file=sys.stderr)
-            errorLabel.config(text="No response received from the server.")
-            errorLabel.update()
+            self.errorLabel.config(text="No response received from the server.")
+            self.errorLabel.update()
             return
 
         if server_response and server_response.get("request") == "credentials":
             credentials = {
                 "request": "credentials",
-                "username": username,
-                "password": password,
-                "gameid": gameid
+                "username": self.username,
+                "password": self.password,
+                "gameid": self.gameid
             }
             # send credentials to the server
             utility.send_message(self.client, credentials)
@@ -278,8 +297,8 @@ class PongClient:
             # Again, check if server_response is not None
             if server_response is None:
                 print("No response received from server. Still waiting...", file=sys.stderr)
-                errorLabel.config(text="No response received from server. Still waiting...")
-                errorLabel.update()
+                self.errorLabel.config(text="No response received from server. Still waiting...")
+                self.errorLabel.update()
 
             # if it's a request to start the game, perform related logic to begin the game
             if server_response.get("request") == "start_game":
@@ -298,24 +317,24 @@ class PongClient:
                 # display any errors that may have happened with the parameters accepted from the server
                 if errors:
                     err_text = "\n".join(errors)
-                    errorLabel.config(text=err_text)
-                    errorLabel.update()
+                    self.errorLabel.config(text=err_text)
+                    self.errorLabel.update()
                     print(err_text, file=sys.stderr)
                     return
 
                 # hides the window for the settings
-                app.withdraw()
+                self.app.withdraw()
                 # start the game
                 self.playGame(x_res, y_res, paddle)
                 # quit the program after the game has ended
-                app.quit()
+                self.app.quit()
                 return
 
     # This displays the opening screen, you don't need to edit this (but may if you like)
     def startScreen(self):
         # initialize TK app
-        app = tk.Tk()
-        app.title("Server Info")
+        self.app = tk.Tk()
+        self.app.title("Server Info")
 
         # display the logo for the pong game
         image = tk.PhotoImage(file="./assets/images/logo.png")
@@ -335,53 +354,54 @@ class PongClient:
         ipLabel = tk.Label(text="Server IP:")
         ipLabel.grid(column=0, row=1, sticky="W", padx=8)
         # ip entry box
-        ipEntry = tk.Entry(app, textvariable=ipVar)
+        ipEntry = tk.Entry(self.app, textvariable=ipVar)
         ipEntry.grid(column=1, row=1)
 
         # port label
         portLabel = tk.Label(text="Server Port:")
         portLabel.grid(column=0, row=2, sticky="W", padx=8)
         # port entry box
-        portEntry = tk.Entry(app, textvariable=portVar)
+        portEntry = tk.Entry(self.app, textvariable=portVar)
         portEntry.grid(column=1, row=2)
 
         # username label
         usernameLabel = tk.Label(text="Username:")
         usernameLabel.grid(column=0, row=3, sticky="W", padx=8)
         # username entry box
-        usernameEntry = tk.Entry(app, textvariable=usernameVar)
+        usernameEntry = tk.Entry(self.app, textvariable=usernameVar)
         usernameEntry.grid(column=1, row=3)
 
         # password label
         passwordLabel = tk.Label(text="Password:")
         passwordLabel.grid(column=0, row=4, sticky="W", padx=8)
         # password entry box
-        passwordEntry = tk.Entry(app, textvariable=passwordVar)
+        passwordEntry = tk.Entry(self.app, textvariable=passwordVar)
         passwordEntry.grid(column=1, row=4)
 
         # gameid label
         gameidLabel = tk.Label(text="Game ID:")
         gameidLabel.grid(column=0, row=5, sticky="W", padx=8)
         # gameid entry box
-        gameidEntry = tk.Entry(app, textvariable=gameidVar)
+        gameidEntry = tk.Entry(self.app, textvariable=gameidVar)
         gameidEntry.grid(column=1, row=5)
 
         # error label
-        errorLabel = tk.Label(text="")
-        errorLabel.grid(column=0, row=7, columnspan=2)
+        self.errorLabel = tk.Label(text="")
+        self.errorLabel.grid(column=0, row=7, columnspan=2)
 
+        self.ip = ipEntry.get()
+        self.port = portEntry.get()
+        self.username = usernameEntry.get()
+        self.password = hashlib.sha256(passwordEntry.get().encode()).hexdigest()
+        self.gameid = gameidEntry.get()
+        
         # display join button at the bottom. When the join button is clicked, the joinServer method is called
-        joinButton = tk.Button(text="Join", command=lambda: self.joinServer(ipEntry.get(), 
-                                                                            portEntry.get(), 
-                                                                            usernameEntry.get(), 
-                                                                            hashlib.sha256(passwordEntry.get().encode()).hexdigest(),
-                                                                            gameidEntry.get(),
-                                                                            errorLabel, 
-                                                                            app))
+        joinButton = tk.Button(text="Join", command=lambda: self.joinServer())
+
         joinButton.grid(column=0, row=6, columnspan=2)
     
         # display the tkinter UI menu
-        app.mainloop()
+        self.app.mainloop()
 
 
 if __name__ == "__main__":
